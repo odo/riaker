@@ -1,0 +1,14 @@
+{application, riaker,
+ [
+  {description, "Additions to the erlang client for riak."},
+  {vsn, "0.1.0"},
+  {registered, [riak_client_server]},
+  {modules, [riaker]},
+  {applications, [
+                  kernel,
+                  stdlib,
+                  sasl
+                 ]},
+  {mod, { riaker_app, []}},
+  {env, []}
+ ]}.
