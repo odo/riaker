@@ -9,6 +9,7 @@
     , bucket/1
     , key/1
     , value/1
+    , raw_value/1
     , delete/1, delete/2
     , get/2
     , reload/1
@@ -73,7 +74,10 @@ finalize_key(random) -> random_key();
 finalize_key(Key) -> Key.
 
 value(RiakObject) ->
-    decode(riakc_obj:get_update_value(RiakObject)).
+    decode(raw_value(RiakObject)).
+
+raw_value(RiakObject) ->
+    riakc_obj:get_update_value(RiakObject).
 
 encode(Value) -> term_to_binary(Value).
 decode(Value) -> binary_to_term(Value).
