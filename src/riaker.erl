@@ -25,6 +25,7 @@
     , update_content_type/2
     , update_metadata/2
     , update_value/2, update_value/3
+    , mapred/2, mapred/3, mapred/4
 ]).
 
 put(Obj) ->
@@ -57,10 +58,10 @@ new(Bucket, Key) ->
     riakc_obj:new(Bucket, finalize_key(Key)).
 
 new(Bucket, Key, Value) ->
-    riakc_obj:new(Bucket, finalize_key(Key), Value).
+    riakc_obj:new(Bucket, finalize_key(Key), encode(Value)).
 
 new(Bucket, Key, Value, ContentType) ->
-	riakc_obj:new(Bucket, finalize_key(Key), Value, ContentType).
+	riakc_obj:new(Bucket, finalize_key(Key), encode(Value), ContentType).
 
 bucket(Object) ->
     riakc_obj:bucket(Object).
@@ -72,7 +73,10 @@ finalize_key(random) -> random_key();
 finalize_key(Key) -> Key.
 
 value(RiakObject) ->
-    binary_to_term(riakc_obj:get_value(RiakObject)).
+    decode(riakc_obj:get_update_value(RiakObject)).
+
+encode(Value) -> term_to_binary(Value).
+decode(Value) -> binary_to_term(Value).
 
 random_key() ->
 	ensure_crypto_server(),
@@ -92,10 +96,10 @@ get_update_metadata(Object) ->
     riakc_obj:get_update_metadata(Object).
 
 update_value(Object, Value) ->
-	riakc_obj:update_value(Object, Value).
+	riakc_obj:update_value(Object, encode(Value)).
 	
 update_value(Object, Value, ContentType) ->
-	riakc_obj:update_value(Object, Value, ContentType).
+	riakc_obj:update_value(Object, encode(Value), ContentType).
 
 update_content_type(Object, ContentType) ->
     riakc_obj:update_content_type(Object, ContentType).
@@ -179,6 +183,16 @@ search(Bucket, Query) ->
     {ok, Pairs} = riakc_pb_socket:search(ballermann:pid(riak_client_server_pool), Bucket, Query),
     [{B, K}||[B, K] <- Pairs].
 
+mapred(Inputs, Query) ->
+    riakc_pb_socket:mapred(riak_server(), Inputs, Query).
+
+mapred(Inputs, Query, Timeout) ->
+    riakc_pb_socket:mapred(riak_server(), Inputs, Query, Timeout).
+
+mapred(Inputs, Query, Timeout, CallTimeout) ->
+    riakc_pb_socket:mapred(riak_server(), Inputs, Query, Timeout, CallTimeout).
+
+
 riak_server() ->
     try
         ballermann:pid(riak_client_server_pool)
@@ -232,8 +246,12 @@ cleanup_obj(_) ->
     riakc_pb_socket:delete(riak_server(), test_bucket(), test_key()).
 
 check_value() ->
-	{ok, Object} = riakc_pb_socket:get(riak_server(), test_bucket(), test_key()),
-	?assertEqual(test_data(), value(Object)).
+    Object = new(test_bucket(), test_key(), undefined),
+    ?assertEqual(undefined, value(Object)),
+    ObjectData = update_value(Object, test_data()),
+    ?assertEqual(test_data(), value(ObjectData)),
+    ObjectRead = reload(Object),
+	?assertEqual(test_data(), value(ObjectRead)).
 
 check_links() ->
 	Object = ?MODULE:get(test_bucket(), test_key()),
