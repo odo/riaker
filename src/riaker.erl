@@ -6,6 +6,7 @@
 
 -export([
     new/2, new/3, new/4
+    , new_raw/3, new_raw/4
     , bucket/1
     , key/1
     , value/1
@@ -62,7 +63,13 @@ new(Bucket, Key, Value) ->
     riakc_obj:new(Bucket, finalize_key(Key), encode(Value)).
 
 new(Bucket, Key, Value, ContentType) ->
-	riakc_obj:new(Bucket, finalize_key(Key), encode(Value), ContentType).
+    riakc_obj:new(Bucket, finalize_key(Key), encode(Value), ContentType).
+
+new_raw(Bucket, Key, Value) ->
+    riakc_obj:new(Bucket, finalize_key(Key), Value).
+
+new_raw(Bucket, Key, Value, ContentType) ->
+	riakc_obj:new(Bucket, finalize_key(Key), Value, ContentType).
 
 bucket(Object) ->
     riakc_obj:bucket(Object).
