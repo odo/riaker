@@ -27,6 +27,7 @@
     , update_content_type/2
     , update_metadata/2
     , update_value/2, update_value/3
+    , update_value_raw/2, update_value_raw/3
     , mapred/2, mapred/3, mapred/4
 ]).
 
@@ -34,10 +35,15 @@ put(Obj) ->
     ?MODULE:put(Obj, []).
     
 put(Obj, Options) ->
-    riakc_pb_socket:put(riak_server(), Obj, Options).
+    put(Obj, Options, undefined).
     
 put(Obj, Options, Timeout) ->
-    riakc_pb_socket:put(riak_server(), Obj, Options, Timeout).
+    case riakc_pb_socket:put(riak_server(), Obj, Options, Timeout) of
+        ok ->
+            ok;
+        Error ->
+            throw(Error)
+    end.
 
 get(Bucket, Key) ->
     case riakc_pb_socket:get(riak_server(), Bucket, Key) of
@@ -69,7 +75,7 @@ new_raw(Bucket, Key, Value) ->
     riakc_obj:new(Bucket, finalize_key(Key), Value).
 
 new_raw(Bucket, Key, Value, ContentType) ->
-	riakc_obj:new(Bucket, finalize_key(Key), Value, ContentType).
+    riakc_obj:new(Bucket, finalize_key(Key), Value, ContentType).
 
 bucket(Object) ->
     riakc_obj:bucket(Object).
@@ -90,33 +96,39 @@ encode(Value) -> term_to_binary(Value).
 decode(Value) -> binary_to_term(Value).
 
 random_key() ->
-	ensure_crypto_server(),
-	Rand = crypto:sha(term_to_binary({make_ref(), now()})),
-	<<I:160/integer>> = Rand,
-	list_to_binary(integer_to_list(I, 32)).
+    ensure_crypto_server(),
+    Rand = crypto:sha(term_to_binary({make_ref(), now()})),
+    <<I:160/integer>> = Rand,
+    list_to_binary(integer_to_list(I, 32)).
 
 ensure_crypto_server() ->
-	case whereis(crypto_server) of
-		undefined ->
-			crypto:start(),
-			{ok, running};
-		_ -> {ok, started}
-	end.
+    case whereis(crypto_server) of
+        undefined ->
+            crypto:start(),
+            {ok, running};
+        _ -> {ok, started}
+    end.
 
 get_update_metadata(Object) ->
     riakc_obj:get_update_metadata(Object).
 
 update_value(Object, Value) ->
-	riakc_obj:update_value(Object, encode(Value)).
-	
+    riakc_obj:update_value(Object, encode(Value)).
+    
 update_value(Object, Value, ContentType) ->
-	riakc_obj:update_value(Object, encode(Value), ContentType).
+    riakc_obj:update_value(Object, encode(Value), ContentType).
+
+update_value_raw(Object, Value) ->
+    riakc_obj:update_value(Object, Value).
+    
+update_value_raw(Object, Value, ContentType) ->
+    riakc_obj:update_value(Object, Value, ContentType).
 
 update_content_type(Object, ContentType) ->
     riakc_obj:update_content_type(Object, ContentType).
 
 update_metadata(Object, ContentType) ->
-	riakc_obj:update_metadata(Object, ContentType).
+    riakc_obj:update_metadata(Object, ContentType).
 
 links(RiakObject) ->
     Meta = get_update_metadata(RiakObject),
@@ -229,20 +241,20 @@ fun cleanup_obj/1,
 ]}.
 
 setup_obj() ->
-	application:start(sasl),
-	application:start(riaker),
-	delete(test_bucket(), test_key()),
-	delete(<<"target_bucket">>, <<"target_key">>),
-	delete(<<"target_bucket2">>, <<"target_key2">>),
-	Object = new(test_bucket(), test_key(), undefined),
-	ObjectCT = update_value(Object, test_data()),
-	put(ObjectCT).
-	
+    application:start(sasl),
+    application:start(riaker),
+    delete(test_bucket(), test_key()),
+    delete(<<"target_bucket">>, <<"target_key">>),
+    delete(<<"target_bucket2">>, <<"target_key2">>),
+    Object = new(test_bucket(), test_key(), undefined),
+    ObjectCT = update_value(Object, test_data()),
+    put(ObjectCT).
+    
 test_data() ->
-	dict:from_list(
-		[{"list", [
-			1,2,dict:from_list([{"nested_key", <<"nested_val">>}])
-			]}]).
+    dict:from_list(
+        [{"list", [
+            1,2,dict:from_list([{"nested_key", <<"nested_val">>}])
+            ]}]).
 
 % test_string() ->
 %   "{\"list\":[1,2,{\"nested_key\":\"nested_val\"}]}".
@@ -262,52 +274,54 @@ check_value() ->
     ObjectData = update_value(Object, test_data()),
     ?assertEqual(test_data(), value(ObjectData)),
     ObjectRead = reload(Object),
-	?assertEqual(test_data(), value(ObjectRead)).
+    ?assertEqual(test_data(), value(ObjectRead)).
 
 check_links() ->
-	Object = ?MODULE:get(test_bucket(), test_key()),
-	?assertEqual([], links(Object)),
-	Object2 = add_link(Object, {{<<"target_bucket">>, <<"target_key">>}, <<"tag">>}),
-	?assertEqual([{{<<"target_bucket">>, <<"target_key">>}, <<"tag">>}], links(Object2)),
-	LinkedObject = new(<<"target_bucket2">>, <<"target_key2">>, undefined),
-	LinkedObject2 = update_value(LinkedObject, test_data()),
-	?MODULE:put(LinkedObject2),
-	LinkedObject3 = reload(LinkedObject2),
-	Object3 = add_link(Object2, LinkedObject3, <<"tag2">>),
-	Links = [ {{bucket(LinkedObject3), key(LinkedObject3)}, <<"tag2">>}, {{<<"target_bucket">>, <<"target_key">>}, <<"tag">>}],
-	?assertEqual(Links, links(Object3)),
-	?assertEqual([{bucket(LinkedObject3), key(LinkedObject3)}], links(Object3, <<"tag2">>)),
-	?assertEqual(LinkedObject3, linked_object(Object3, <<"tag2">>)),
-	Object4 = remove_links(Object3, <<"tag">>),
-	[FirstLink | _ ] = Links,
-	?assertEqual([FirstLink], links(Object4)),
-	Object5 = replace_link(Object4, {{<<"new_bucket">>, <<"new_key">>}, <<"tag2">>}),
-	?assertEqual([{{<<"new_bucket">>, <<"new_key">>}, <<"tag2">>}], links(Object5)).
-	
+    Object = ?MODULE:get(test_bucket(), test_key()),
+    ?assertEqual([], links(Object)),
+    Object2 = add_link(Object, {{<<"target_bucket">>, <<"target_key">>}, <<"tag">>}),
+    ?assertEqual([{{<<"target_bucket">>, <<"target_key">>}, <<"tag">>}], links(Object2)),
+    LinkedObject = new(<<"target_bucket2">>, <<"target_key2">>, undefined),
+    LinkedObject2 = update_value(LinkedObject, test_data()),
+    ?MODULE:put(LinkedObject2),
+    LinkedObject3 = reload(LinkedObject2),
+    Object3 = add_link(Object2, LinkedObject3, <<"tag2">>),
+    Links = [ {{bucket(LinkedObject3), key(LinkedObject3)}, <<"tag2">>}, {{<<"target_bucket">>, <<"target_key">>}, <<"tag">>}],
+    ?assertEqual(Links, links(Object3)),
+    ?assertEqual([{bucket(LinkedObject3), key(LinkedObject3)}], links(Object3, <<"tag2">>)),
+    ?assertEqual(LinkedObject3, linked_object(Object3, <<"tag2">>)),
+    Object4 = remove_links(Object3, <<"tag">>),
+    [FirstLink | _ ] = Links,
+    ?assertEqual([FirstLink], links(Object4)),
+    Object5 = replace_link(Object4, {{<<"new_bucket">>, <<"new_key">>}, <<"tag2">>}),
+    ?assertEqual([{{<<"new_bucket">>, <<"new_key">>}, <<"tag2">>}], links(Object5)).
+    
 check_find() ->
-	Object = ?MODULE:get(test_bucket(), test_key()),
-	?assertEqual(test_bucket(), bucket(Object)),
-	?assertEqual(test_key(), key(Object)),
-	?assertEqual(Object, ?MODULE:get(test_bucket(), test_key())),
-	?assertEqual(Object, ?MODULE:get(test_bucket(), test_key())).
+    Object = ?MODULE:get(test_bucket(), test_key()),
+    ?assertEqual(test_bucket(), bucket(Object)),
+    ?assertEqual(test_key(), key(Object)),
+    ?assertEqual(Object, ?MODULE:get(test_bucket(), test_key())),
+    ?assertEqual(Object, ?MODULE:get(test_bucket(), test_key())).
 
 random_key_test() ->
-	?assert(random_key() =/= random_key()).
+    ?assert(random_key() =/= random_key()).
 
-	
+    
 creation_test_with_key_test() ->
-	Obj = new(test_bucket(), test_key(), ["a test"]),
-	?MODULE:put(Obj),
-	ObjGet = get(test_bucket(), test_key()),
-	?assertEqual(["a test"], value(ObjGet)),
-	delete(Obj).
-	
+    Obj = new(test_bucket(), test_key(), ["a test"]),
+    PutReply = ?MODULE:put(Obj),
+    ?assertEqual(ok, PutReply),
+    ObjGet = get(test_bucket(), test_key()),
+    ?assertEqual(["a test"], value(ObjGet)),
+    ?assertEqual(["a test"], value(ObjGet)),
+    delete(Obj).
+    
 % creation_with_links_test() ->
-% 	Links = [{{<<"bucket1">>, <<"key1">>}, <<"tag1">>}, {{<<"bucket2">>, <<"key2">>}, <<"tag2">>}],
-% 	Obj = new_with_links(test_bucket(), random, test_data(), Links),
-% 	?assertEqual(test_data(), value(Obj)),
-% 	?assertEqual(Links, links(Obj)),
-% 	riakc_pb_socket:delete(riak_server(), test_bucket(), key(Obj)).	
+%   Links = [{{<<"bucket1">>, <<"key1">>}, <<"tag1">>}, {{<<"bucket2">>, <<"key2">>}, <<"tag2">>}],
+%   Obj = new_with_links(test_bucket(), random, test_data(), Links),
+%   ?assertEqual(test_data(), value(Obj)),
+%   ?assertEqual(Links, links(Obj)),
+%   riakc_pb_socket:delete(riak_server(), test_bucket(), key(Obj)). 
 
 % inequality_bucket_test() ->
 %     O1 = new(<<"test1">>, <<"a">>, "value"),
@@ -361,7 +375,7 @@ creation_test_with_key_test() ->
 %     M2 = dict:from_list([{?MD_VTAG, "tag1"}]),
 %     O = new_obj(<<"b">>, <<"k">>, <<"vclock">>,
 %                       [{M1, <<"val1">>},
-% 											 {M2, <<"val2">>}]),
+%                                            {M2, <<"val2">>}]),
 %     ?assertEqual(2, ?MODULE:value_count(O)),
 %     ?assertEqual([M1, M2], ?MODULE:get_metadatas(O)),
 %     ?assertEqual([<<"val1">>, <<"val2">>], ?MODULE:get_values(O)),
@@ -400,23 +414,23 @@ creation_test_with_key_test() ->
 %     ?assertEqual("application/json", get_update_content_type(O1)).
 
 % delete_test() ->
-% 	Obj = new(<<"deleteme">>, <<"now">>, <<"nothing">>),
-% 	?MODULE:put(Obj),
-% 	find(<<"deleteme">>, <<"now">>),
-% 	delete(Obj),
-% 	?assertEqual({error, notfound}, find(<<"deleteme">>, <<"now">>)).
+%   Obj = new(<<"deleteme">>, <<"now">>, <<"nothing">>),
+%   ?MODULE:put(Obj),
+%   find(<<"deleteme">>, <<"now">>),
+%   delete(Obj),
+%   ?assertEqual({error, notfound}, find(<<"deleteme">>, <<"now">>)).
 
 % get_update_data_test() ->
 %     MD0 = dict:from_list([{?MD_CTYPE, "text/plain"}]),
 %     MD1 = dict:from_list([{?MD_CTYPE, "application/json"}]),
 %     O = new_obj(<<"b">>, <<"k">>, <<"">>,
-% 								[{MD0, <<"v">>}]),
+%                               [{MD0, <<"v">>}]),
 %     %% Create an updated metadata object
 %     Oumd = ?MODULE:update_metadata(O, MD1),
 %     ?assertEqual(MD1, get_update_metadata(Oumd)),
 %     %% Create an updated value object
 %     Ouv = ?MODULE:update_value(O, <<"valueonly">>),
-% 		?assertEqual(<<"valueonly">>, get_update_value(Ouv)),
+%       ?assertEqual(<<"valueonly">>, get_update_value(Ouv)),
     
 %     %% Create updated both object
 %     Oboth = ?MODULE:update_value(Oumd, <<"both">>),
