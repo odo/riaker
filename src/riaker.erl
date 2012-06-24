@@ -6,11 +6,13 @@
 
 -export([
     new/2, new/3, new/4
+    , new_json/3
     , new_raw/3, new_raw/4
     , bucket/1
     , key/1
     , value/1
-    , raw_value/1
+    , value_json/1
+    , value_raw/1
     , delete/1, delete/2
     , get/2
     , reload/1
@@ -27,6 +29,7 @@
     , update_content_type/2
     , update_metadata/2
     , update_value/2, update_value/3
+    , update_value_json/2, update_value_json/3
     , update_value_raw/2, update_value_raw/3
     , mapred/2, mapred/3, mapred/4
 ]).
@@ -35,7 +38,7 @@ put(Obj) ->
     ?MODULE:put(Obj, []).
     
 put(Obj, Options) ->
-    put(Obj, Options, undefined).
+    ?MODULE:put(Obj, Options, undefined).
     
 put(Obj, Options, Timeout) ->
     case riakc_pb_socket:put(riak_server(), Obj, Options, Timeout) of
@@ -71,6 +74,9 @@ new(Bucket, Key, Value) ->
 new(Bucket, Key, Value, ContentType) ->
     riakc_obj:new(Bucket, finalize_key(Key), encode(Value), ContentType).
 
+new_json(Bucket, Key, Value) ->
+    riakc_obj:new(Bucket, finalize_key(Key), encode_json(Value), "application/json").
+
 new_raw(Bucket, Key, Value) ->
     riakc_obj:new(Bucket, finalize_key(Key), Value).
 
@@ -87,13 +93,19 @@ finalize_key(random) -> random_key();
 finalize_key(Key) -> Key.
 
 value(RiakObject) ->
-    decode(raw_value(RiakObject)).
+    decode(value_raw(RiakObject)).
 
-raw_value(RiakObject) ->
+value_json(RiakObject) ->
+    decode_json(value_raw(RiakObject)).
+
+value_raw(RiakObject) ->
     riakc_obj:get_update_value(RiakObject).
 
 encode(Value) -> term_to_binary(Value).
 decode(Value) -> binary_to_term(Value).
+
+encode_json(Value) -> list_to_binary(json:to(Value)).
+decode_json(Value) -> json:from(binary_to_list(Value)).
 
 random_key() ->
     ensure_crypto_server(),
@@ -117,6 +129,12 @@ update_value(Object, Value) ->
     
 update_value(Object, Value, ContentType) ->
     riakc_obj:update_value(Object, encode(Value), ContentType).
+
+update_value_json(Object, Value) ->
+    riakc_obj:update_value(Object, encode_json(Value)).
+    
+update_value_json(Object, Value, ContentType) ->
+    riakc_obj:update_value(Object, encode_json(Value), ContentType).
 
 update_value_raw(Object, Value) ->
     riakc_obj:update_value(Object, Value).
@@ -234,6 +252,7 @@ fun setup_obj/0,
 fun cleanup_obj/1,
 [
     {"Read and write", fun check_value/0}
+    , {"Read and write JSON", fun check_json_value/0}
     , {"Add and check links", fun check_links/0}
     , {"Check if find works", fun check_find/0}
     , {"Create with key", fun creation_test_with_key_test/0}
@@ -275,6 +294,18 @@ check_value() ->
     ?assertEqual(test_data(), value(ObjectData)),
     ObjectRead = reload(Object),
     ?assertEqual(test_data(), value(ObjectRead)).
+
+check_json_value() ->
+    Object = new_json(test_bucket(), test_key(), undefined),
+    ?assertEqual("application/json", riakc_obj:get_update_content_type(Object)),
+    ?assertEqual(undefined, value_json(Object)),
+    ObjectData = update_value_json(Object, test_data()),
+    ?assertEqual(test_data(), value_json(ObjectData)),
+    ?assertEqual(list_to_binary(json:to(test_data())), value_raw(ObjectData)),
+    ?MODULE:put(ObjectData),
+    ObjectRead = reload(Object),
+    ?assertEqual("application/json", riakc_obj:get_content_type(ObjectRead)),
+    ?assertEqual(test_data(), value_json(ObjectRead)).
 
 check_links() ->
     Object = ?MODULE:get(test_bucket(), test_key()),
