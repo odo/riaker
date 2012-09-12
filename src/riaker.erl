@@ -25,6 +25,7 @@
     , random_key/0
     , replace_link/2, replace_link/3
     , search/2, search/3
+    , keys/1
     , signature/1
     , update_content_type/2
     , update_metadata/2
@@ -221,8 +222,12 @@ search(Bucket, QueryField, QueryTerm) ->
     search(Bucket, QueryField ++ ":" ++ QueryTerm).
 
 search(Bucket, Query) ->
-    {ok, Pairs} = riakc_pb_socket:search(ballermann:pid(riak_client_server_pool), Bucket, Query),
+    {ok, Pairs} = riakc_pb_socket:search(riak_server(), Bucket, Query),
     [{B, K}||[B, K] <- Pairs].
+
+keys(Bucket) ->
+    {ok, Keys} = riakc_pb_socket:list_keys(riak_server(), Bucket),
+    Keys. 
 
 mapred(Inputs, Query) ->
     riakc_pb_socket:mapred(riak_server(), Inputs, Query).
@@ -255,6 +260,7 @@ fun cleanup_obj/1,
     , {"Read and write JSON", fun check_json_value/0}
     , {"Add and check links", fun check_links/0}
     , {"Check if find works", fun check_find/0}
+    , {"Check if keys work", fun check_keys/0}
     , {"Create with key", fun creation_test_with_key_test/0}
     % , {"Create with links", fun creation_with_links_test/0}
 ]}.
@@ -306,6 +312,10 @@ check_json_value() ->
     ObjectRead = reload(Object),
     ?assertEqual("application/json", riakc_obj:get_content_type(ObjectRead)),
     ?assertEqual(test_data(), value_json(ObjectRead)).
+
+check_keys() ->
+    ?MODULE:put(new(<<"target_bucket">>, <<"target_key">>, undefined)),
+    ?assertEqual([<<"target_key">>], keys(<<"target_bucket">>)).
 
 check_links() ->
     Object = ?MODULE:get(test_bucket(), test_key()),
