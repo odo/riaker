@@ -1,7 +1,7 @@
 {application, riaker,
  [
   {description, "Additions to the erlang client for riak."},
-  {vsn, "0.1.0"},
+  {vsn, "0.1.1"},
   {registered, [riak_client_server]},
   {modules, [riaker]},
   {applications, [

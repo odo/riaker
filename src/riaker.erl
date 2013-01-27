@@ -26,6 +26,7 @@
     , replace_link/2, replace_link/3
     , search/2, search/3
     , keys/1
+    , last_modified/1
     , signature/1
     , update_content_type/2
     , update_metadata/2
@@ -211,12 +212,21 @@ replace_link(RiakObject, LinkedObject, Tag) ->
     add_link(RiakObjectLinksRemoved, LinkedObject, Tag).
 
 signature(Object) ->
-    {bucket(Object), key(Object), last_modified(Object)}.
+    {bucket(Object), key(Object), last_modified_or_zero(Object)}.
 
 last_modified(Object) ->
     Meta = get_update_metadata(Object),
     {ok, Time} = dict:find(<<"X-Riak-Last-Modified">>, Meta),
     Time.
+
+last_modified_or_zero(Object) ->
+    Meta = get_update_metadata(Object),
+    case dict:find(<<"X-Riak-Last-Modified">>, Meta) of
+        {ok, Time} ->
+            Time;
+        error ->
+            {0, 0, 0}
+    end.
 
 search(Bucket, QueryField, QueryTerm) ->
     search(Bucket, QueryField ++ ":" ++ QueryTerm).
